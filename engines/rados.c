@@ -247,11 +247,22 @@ static enum fio_q_status fio_rados_queue(struct thread_data *td,
 			goto failed;
 		}
 
-		r = rados_aio_write(rados->io_ctx, object, fri->completion,
-			io_u->xfer_buf, io_u->xfer_buflen, io_u->offset);
-		if (r < 0) {
-			log_err("rados_write failed.\n");
-			goto failed_comp;
+		if (object[0] != '*') {
+		  r = rados_aio_write(rados->io_ctx, object, fri->completion,
+				      io_u->xfer_buf, io_u->xfer_buflen, io_u->offset);
+		  if (r < 0) {
+		    log_err("rados_write failed.\n");
+		    goto failed_comp;
+		  }
+		} else {
+		  char attr_name[16];
+		  sprintf(attr_name, "%lld", io_u->offset);
+		  r = rados_aio_setxattr(rados->io_ctx, &object[1], fri->completion,
+					 attr_name, io_u->xfer_buf, io_u->xfer_buflen);
+		  if (r < 0) {
+		    log_err("rados_setxattr failed.\n");
+		    goto failed_comp;
+		  }					 
 		}
 		return FIO_Q_QUEUED;
 	} else if (io_u->ddir == DDIR_READ) {

@@ -182,8 +182,9 @@ int read_iolog_get(struct thread_data *td, struct io_u *io_u)
 				iolog_delay(td, ipo->delay);
 		} else {
 			elapsed = mtime_since_genesis();
-			if (ipo->delay > elapsed)
-				usec_sleep(td, (ipo->delay - elapsed) * 1000);
+			usec_sleep(td, ipo->delay * 1000);
+			//if (ipo->delay > elapsed)
+			//	usec_sleep(td, (ipo->delay - elapsed) * 1000);
 		}
 
 		free(ipo);

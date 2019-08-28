@@ -247,14 +247,7 @@ static enum fio_q_status fio_rados_queue(struct thread_data *td,
 			goto failed;
 		}
 
-		if (object[0] != '*') {
-		  r = rados_aio_write(rados->io_ctx, object, fri->completion,
-				      io_u->xfer_buf, io_u->xfer_buflen, io_u->offset);
-		  if (r < 0) {
-		    log_err("rados_write failed.\n");
-		    goto failed_comp;
-		  }
-		} else {
+		if (object[0] == '*') {
 		  char attr_name[16];
 		  sprintf(attr_name, "%lld", io_u->offset);
 		  r = rados_aio_setxattr(rados->io_ctx, &object[1], fri->completion,
@@ -262,7 +255,41 @@ static enum fio_q_status fio_rados_queue(struct thread_data *td,
 		  if (r < 0) {
 		    log_err("rados_setxattr failed.\n");
 		    goto failed_comp;
+		  }
+		} if (object[0] == '@') {
+		  char attr_name[16];
+		  sprintf(attr_name, "%lld", io_u->offset);
+		  rados_write_op_t write_op = rados_create_write_op();
+		  const char* keys[1] = {attr_name};
+		  const char* values[1] = {io_u->xfer_buf};
+		  size_t lens[1] = {io_u->xfer_buflen};
+
+		  rados_write_op_omap_set(write_op,
+					  keys,
+					  values,
+					  lens,
+					  1);
+
+		  r = rados_aio_write_op_operate(write_op,
+					     rados->io_ctx,
+                                             fri->completion,
+					     &object[1],
+					     0,
+					     LIBRADOS_OPERATION_NOFLAG);
+		  if (r < 0) {
+		    log_err("rados_write_op_operate.\n");
+		    goto failed_comp;
 		  }					 
+
+		  rados_release_write_op(write_op);
+					 
+		} else {
+		  r = rados_aio_write(rados->io_ctx, object, fri->completion,
+				      io_u->xfer_buf, io_u->xfer_buflen, io_u->offset);
+		  if (r < 0) {
+		    log_err("rados_write failed.\n");
+		    goto failed_comp;
+		  }
 		}
 		return FIO_Q_QUEUED;
 	} else if (io_u->ddir == DDIR_READ) {

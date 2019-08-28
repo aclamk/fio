@@ -240,7 +240,7 @@ void fio_terminate_threads(unsigned int group_id)
 	int i;
 
 	dprint(FD_PROCESS, "terminate group_id=%d\n", group_id);
-
+sleep(1);
 	for_each_td(td, i) {
 		if (group_id == TERMINATE_ALL || group_id == td->groupid) {
 			dprint(FD_PROCESS, "setting terminate on %s/%d\n",

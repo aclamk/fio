@@ -16,6 +16,10 @@ struct fio_rados_iou {
 	struct io_u *io_u;
 	rados_completion_t completion;
 	rados_write_op_t write_op;
+        rados_omap_iter_t iter;
+        unsigned char pmore;
+        int prval;
+  //rados_read_op_t read_op;
 };
 
 struct rados_data {
@@ -236,6 +240,8 @@ static enum fio_q_status fio_rados_queue(struct thread_data *td,
 	struct fio_rados_iou *fri = io_u->engine_data;
 	char *object = io_u->file->file_name;
 	int r = -1;
+	fri->write_op = 0;
+	fri->iter = 0;
 
 	fio_ro_check(td, io_u);
 
@@ -258,12 +264,11 @@ static enum fio_q_status fio_rados_queue(struct thread_data *td,
 		  }
 		} if (object[0] == '@') {
 		  char attr_name[16];
-		  sprintf(attr_name, "%lld", io_u->offset);
 		  rados_write_op_t write_op = rados_create_write_op();
 		  const char* keys[1] = {attr_name};
 		  const char* values[1] = {io_u->xfer_buf};
 		  size_t lens[1] = {io_u->xfer_buflen};
-
+		  sprintf(attr_name, "%lld", io_u->offset);
 		  rados_write_op_omap_set(write_op,
 					  keys,
 					  values,
@@ -299,11 +304,50 @@ static enum fio_q_status fio_rados_queue(struct thread_data *td,
 			log_err("rados_aio_create_completion failed.\n");
 			goto failed;
 		}
-		r = rados_aio_read(rados->io_ctx, object, fri->completion,
-			io_u->xfer_buf, io_u->xfer_buflen, io_u->offset);
-		if (r < 0) {
-			log_err("rados_aio_read failed.\n");
-			goto failed_comp;
+		if (object[0] == '@') {
+		    rados_read_op_t read_op = rados_create_read_op();
+		    if (io_u->offset == 0) {
+		      rados_read_op_omap_get_vals2(read_op,
+						   "",//const char *start_after,
+						   "",//const char *filter_prefix,
+						   100,//uint64_t max_return,
+						   &fri->iter,
+						   &fri->pmore,
+						   &fri->prval);
+		    } else {
+		      char* keys[1];
+		      size_t key_lens[1];
+		      char* key;
+		      int r = asprintf(&key, "%llu", io_u->offset);
+		      keys[0] = key;
+		      key_lens[0] = r;
+		      rados_read_op_omap_get_vals_by_keys2(read_op,
+							   (char const* const *)keys,
+							   1,
+							   key_lens,
+							   &fri->iter,
+							   &fri->prval);
+		      fri->pmore = 0;
+		      free(key);
+		    }
+		    r = rados_aio_read_op_operate(read_op,
+						  rados->io_ctx,
+						  fri->completion,
+						  &object[1],
+						  LIBRADOS_OPERATION_NOFLAG);
+
+		    if (r < 0) {
+		      log_err("rados_aio_read_op_operate.\n");
+		      goto failed_comp;
+		    }
+		    rados_release_read_op(read_op);
+		} else {
+		  r = rados_aio_read(rados->io_ctx, object, fri->completion,
+				     io_u->xfer_buf, io_u->xfer_buflen, io_u->offset);
+		  if (r < 0) {
+		    log_err("rados_aio_read failed.\n");
+		    goto failed_comp;
+		  }
 		}
 		return FIO_Q_QUEUED;
 	} else if (io_u->ddir == DDIR_TRIM) {
@@ -373,6 +417,23 @@ int fio_rados_getevents(struct thread_data *td, unsigned int min,
 					if (fri->write_op != NULL) {
 						rados_release_write_op(fri->write_op);
 						fri->write_op = NULL;
+					}
+					if (fri->iter != NULL) {
+					  unsigned int elems = rados_omap_iter_size(fri->iter);
+					  char *key;
+					  char *val;
+                                          size_t key_len;
+                                          size_t val_len;
+					  int r = 0;
+					  log_err("read omap completed. prval=%d pmore=%d elems=%d\n",
+						  fri->prval, fri->pmore, elems);
+					  for (unsigned i=0; r==0 && i<elems; i++) {
+					    r = rados_omap_get_next2(fri->iter,
+									 &key, &val, &key_len, &val_len);
+					    log_err("key=%s key_len=%lu, val_len=%lu\n", key, key_len, val_len);
+					  }
+					  rados_omap_get_end(fri->iter);
+					  fri->iter = NULL;
 					}
 					rados_aio_release(fri->completion);
 					fri->completion = NULL;

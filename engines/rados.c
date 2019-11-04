@@ -17,6 +17,7 @@ struct fio_rados_iou {
 	rados_completion_t completion;
 	rados_write_op_t write_op;
         rados_omap_iter_t iter;
+        rados_xattrs_iter_t xiter;
         unsigned char pmore;
         int prval;
   //rados_read_op_t read_op;
@@ -242,11 +243,12 @@ static enum fio_q_status fio_rados_queue(struct thread_data *td,
 	int r = -1;
 	fri->write_op = 0;
 	fri->iter = 0;
-
+        fri->xiter = 0;
+        fri->pmore = 0;
 	fio_ro_check(td, io_u);
 
 	if (io_u->ddir == DDIR_WRITE) {
-		 r = rados_aio_create_completion(fri, NULL,
+		r = rados_aio_create_completion(fri, NULL,
 			NULL, &fri->completion);
 		if (r < 0) {
 			log_err("rados_aio_create_completion failed.\n");
@@ -262,7 +264,7 @@ static enum fio_q_status fio_rados_queue(struct thread_data *td,
 		    log_err("rados_setxattr failed.\n");
 		    goto failed_comp;
 		  }
-		} if (object[0] == '@') {
+		} else if (object[0] == '@') {
 		  char attr_name[16];
 		  rados_write_op_t write_op = rados_create_write_op();
 		  const char* keys[1] = {attr_name};
@@ -304,7 +306,24 @@ static enum fio_q_status fio_rados_queue(struct thread_data *td,
 			log_err("rados_aio_create_completion failed.\n");
 			goto failed;
 		}
-		if (object[0] == '@') {
+                if (object[0] == '*') {
+                    if (io_u->offset == 0) {
+                       int r = rados_aio_getxattrs(rados->io_ctx, &object[1],
+                                      fri->completion,
+                                        &fri->xiter);
+                                      //const char *name, char *buf, size_t len);
+	               assert(r == 0);
+                    } else {               
+                      char* key;
+                      asprintf(&key, "%llu", io_u->offset);
+                      int r = rados_aio_getxattr(rados->io_ctx, &object[1],
+                                      fri->completion,
+                                        key, io_u->xfer_buf, io_u->xfer_buflen);
+                      fri->pmore = -2;
+                      assert(r == 0);
+                      free(key);
+                    } 
+                } else if (object[0] == '@') {
 		    rados_read_op_t read_op = rados_create_read_op();
 		    if (io_u->offset == 0) {
 		      rados_read_op_omap_get_vals2(read_op,
@@ -425,16 +444,31 @@ int fio_rados_getevents(struct thread_data *td, unsigned int min,
                                           size_t key_len;
                                           size_t val_len;
 					  int r = 0;
-					  log_err("read omap completed. prval=%d pmore=%d elems=%d\n",
-						  fri->prval, fri->pmore, elems);
+					  //log_err("read omap completed. prval=%d pmore=%d elems=%d\n",  fri->prval, fri->pmore, elems);
 					  for (unsigned i=0; r==0 && i<elems; i++) {
 					    r = rados_omap_get_next2(fri->iter,
 									 &key, &val, &key_len, &val_len);
-					    log_err("key=%s key_len=%lu, val_len=%lu\n", key, key_len, val_len);
+					    //log_err("r=%d key=%s key_len=%lu, val_len=%lu\n", r, key, key_len, val_len);
 					  }
 					  rados_omap_get_end(fri->iter);
 					  fri->iter = NULL;
 					}
+                                        if (fri->xiter != NULL) {
+                                          char* name;
+                                          char* val;
+                                          size_t len = 0;
+                                          do {
+                                          int r = rados_getxattrs_next(
+                                            fri->xiter,
+                                            &name, &val, &len);
+                                            //log_err("r=%d key=%s val_len=%lu\n", r, name, len);
+                                          } while (len != 0);
+                                          rados_getxattrs_end(fri->xiter);
+                                          fri->xiter = NULL;
+                                        }
+                                        if (fri->pmore == (unsigned char)-2) {
+                                           //log_err("single xattr value\n");
+                                        }
 					rados_aio_release(fri->completion);
 					fri->completion = NULL;
 					rados->aio_events[events] = u;
@@ -532,7 +566,7 @@ static int fio_rados_io_u_init(struct thread_data *td, struct io_u *io_u)
 static struct ioengine_ops ioengine = {
 	.name = "rados",
 	.version		= FIO_IOOPS_VERSION,
-	.flags			= FIO_DISKLESSIO,
+	.flags			= FIO_DISKLESSIO|FIO_NOFILEHASH,
 	.setup			= fio_rados_setup,
 	.queue			= fio_rados_queue,
 	.getevents		= fio_rados_getevents,

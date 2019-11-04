@@ -455,6 +455,9 @@ static bool read_iolog2(struct thread_data *td)
 			} else if (!strcmp(act, "open")) {
 				fileno = get_fileno(td, fname);
 				file_action = FIO_LOG_OPEN_FILE;
+                                if (fileno == -1) {
+                                   fileno = add_file(td, fname, td->subjob_number, 1);
+                                }
 			} else if (!strcmp(act, "close")) {
 				fileno = get_fileno(td, fname);
 				file_action = FIO_LOG_CLOSE_FILE;
@@ -700,7 +703,7 @@ bool init_iolog(struct thread_data *td)
 		 * Check if it's a blktrace file and load that if possible.
 		 * Otherwise assume it's a normal log file and load that.
 		 */
-		if (is_blktrace(td->o.read_iolog_file, &need_swap))
+		if (false&&is_blktrace(td->o.read_iolog_file, &need_swap))
 			ret = load_blktrace(td, td->o.read_iolog_file, need_swap);
 		else
 			ret = init_iolog_read(td);

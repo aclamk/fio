@@ -436,7 +436,7 @@ static int fio_rados_io_u_init(struct thread_data *td, struct io_u *io_u)
 static struct ioengine_ops ioengine = {
 	.name = "rados",
 	.version		= FIO_IOOPS_VERSION,
-	.flags			= FIO_DISKLESSIO,
+	.flags			= FIO_DISKLESSIO|FIO_NOFILEHASH,
 	.setup			= fio_rados_setup,
 	.queue			= fio_rados_queue,
 	.getevents		= fio_rados_getevents,

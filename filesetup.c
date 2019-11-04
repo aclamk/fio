@@ -1653,7 +1653,16 @@ int add_file(struct thread_data *td, const char *fname, int numjob, int inc)
 		return 0;
 
 	f = alloc_new_file(td);
-
+	for (int i = 0; i < td->files_index; i++) {
+		if (td->files[i]->fd == -2) {
+			dprint(FD_FILE, "reuse file location %d\n", i);
+			td->files[i]->fd = -1;
+			free(td->files[i]->file_name);
+			cur_files = i;
+                        free(td->files[i]);
+			goto found_location;
+		}
+	}
 	if (td->files_size <= td->files_index) {
 		unsigned int new_size = td->o.nr_files + 1;
 
@@ -1673,7 +1682,11 @@ int add_file(struct thread_data *td, const char *fname, int numjob, int inc)
 			td->file_locks[cur_files] = FILE_LOCK_NONE;
 		}
 		td->files_size = new_size;
+		td->files_index++;
 	}
+	if (inc)
+		td->o.nr_files++;
+	found_location:
 	td->files[cur_files] = f;
 	f->fileno = cur_files;
 
@@ -1707,13 +1720,13 @@ int add_file(struct thread_data *td, const char *fname, int numjob, int inc)
 		assert(0);
 	}
 
-	td->files_index++;
+	//td->files_index++;
 
 	if (td->o.numjobs > 1)
 		set_already_allocated(file_name);
 
-	if (inc)
-		td->o.nr_files++;
+	//if (inc)
+//		td->o.nr_files++;
 
 	dprint(FD_FILE, "file %p \"%s\" added at %d\n", f, f->file_name,
 							cur_files);
@@ -1777,6 +1790,7 @@ int put_file(struct thread_data *td, struct fio_file *f)
 	fio_file_clear_closing(f);
 	fio_file_clear_open(f);
 	assert(f->fd == -1);
+	f->fd = -2;
 	return ret;
 }
 

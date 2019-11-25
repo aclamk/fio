@@ -41,9 +41,19 @@ size_t log_valist(const char *fmt, va_list args)
 	return len;
 }
 
+double now() {
+
+struct timespec tp;
+
+clock_gettime(CLOCK_MONOTONIC, &tp);
+return tp.tv_sec + tp.tv_nsec/1000000000.;
+}
+
 /* add prefix for the specified type in front of the valist */
 void log_prevalist(int type, const char *fmt, va_list args)
 {
+	static double start=0;
+        if(start == 0) start=now();
 	char *buf1, *buf2;
 	int len;
 	pid_t pid;
@@ -56,8 +66,8 @@ void log_prevalist(int type, const char *fmt, va_list args)
 	len = vasprintf(&buf1, fmt, args);
 	if (len < 0)
 		return;
-	len = asprintf(&buf2, "%-8s %-5u %s", debug_levels[type].name,
-		       (int) pid, buf1);
+	len = asprintf(&buf2, "%-8s %-5u %8.8lf %s", debug_levels[type].name,
+		       (int) pid, now() - start, buf1);
 	free(buf1);
 	if (len < 0)
 		return;

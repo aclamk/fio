@@ -77,7 +77,7 @@ struct io_u {
 
 	unsigned long long resid;
 	unsigned int error;
-
+	double start;
 	/*
 	 * io engine private data
 	 */
@@ -148,18 +148,18 @@ bool queue_full(const struct thread_data *);
 
 int do_io_u_sync(const struct thread_data *, struct io_u *);
 int do_io_u_trim(const struct thread_data *, struct io_u *);
-
+extern double now();
 #ifdef FIO_INC_DEBUG
 static inline void dprint_io_u(struct io_u *io_u, const char *p)
 {
 	struct fio_file *f = io_u->file;
 
 	if (f)
-		dprint(FD_IO, "%s: io_u %p: off=0x%llx,len=0x%llx,ddir=%d,file=%s\n",
+		dprint(FD_IO, "%s: io_u %p: off=0x%llx,len=0x%llx,ddir=%d,file=%s elapsed=%8.8lf\n",
 				p, io_u,
 				(unsigned long long) io_u->offset,
 				io_u->buflen, io_u->ddir,
-				f->file_name);
+				f->file_name, now()-io_u->start);
 	else
 		dprint(FD_IO, "%s: io_u %p: off=0x%llx,len=0x%llx,ddir=%d\n",
 				p, io_u,

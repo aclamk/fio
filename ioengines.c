@@ -276,7 +276,7 @@ out:
 	dprint(FD_IO, "getevents: %d\n", r);
 	return r;
 }
-
+extern double now();
 enum fio_q_status td_io_queue(struct thread_data *td, struct io_u *io_u)
 {
 	const enum fio_ddir ddir = acct_ddir(io_u);
@@ -327,7 +327,7 @@ enum fio_q_status td_io_queue(struct thread_data *td, struct io_u *io_u)
 		}
 		td->rate_io_issue_bytes[ddir] += buflen;
 	}
-
+	io_u->start = now();
 	ret = td->io_ops->queue(td, io_u);
 	if (ret != FIO_Q_BUSY && io_u->post_submit) {
 		io_u->post_submit(io_u, io_u->error == 0);

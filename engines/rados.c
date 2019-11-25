@@ -28,6 +28,7 @@ struct rados_data {
 	rados_ioctx_t io_ctx;
 	struct io_u **aio_events;
 	bool connected;
+	int last_getevent;
 };
 
 /* fio configuration options read from the job file */
@@ -99,6 +100,7 @@ static int _fio_setup_rados_data(struct thread_data *td,
 	rados->aio_events = calloc(td->o.iodepth, sizeof(struct io_u *));
 	if (!rados->aio_events)
 		goto failed;
+	rados->last_getevent = 0;
 	*rados_data_ptr = rados;
 	return 0;
 
@@ -422,11 +424,15 @@ int fio_rados_getevents(struct thread_data *td, unsigned int min,
 	unsigned int i;
 	rados_completion_t first_unfinished;
 	int observed_new = 0;
-
+dprint(FD_IO, "min=%d max=%d last=%d\n", min,max,rados->last_getevent);
 	/* loop through inflight ios until we find 'min' completions */
 	do {
 		first_unfinished = NULL;
-		io_u_qiter(&td->io_u_all, u, i) {
+//#define io_u_qiter(q, io_u, i)	\
+//	for (i = 0; i < (q)->nr && (io_u = (q)->io_us[i]); i++)		
+//		io_u_qiter(&td->io_u_all, u, i) {
+		for (i = rados->last_getevent; 
+			i < (&td->io_u_all)->nr && (u = (&td->io_u_all)->io_us[i]); i++) {
 			if (!(u->flags & IO_U_F_FLIGHT))
 				continue;
 
@@ -481,8 +487,14 @@ int fio_rados_getevents(struct thread_data *td, unsigned int min,
 			if (events >= max)
 				break;
 		}
-		if (events >= min)
+		if (events >= min) {
+			if (i >= (&td->io_u_all)->nr - 1) 
+				i = 0;
+dprint(FD_IO, "i=%d nr=%d last=%d\n", i, (&td->io_u_all)->nr, max,rados->last_getevent);
+			rados->last_getevent = i;			
 			return events;
+		}
+
 		if (first_unfinished == NULL || busy_poll)
 			continue;
 

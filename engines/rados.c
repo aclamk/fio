@@ -322,6 +322,9 @@ static enum fio_q_status fio_rados_queue(struct thread_data *td,
 		return FIO_Q_QUEUED;
 	} else if (io_u->ddir == DDIR_SYNC) {
 		rados_write_op_t write_op;
+		if (io_u->xfer_buflen != 111111) {
+			return FIO_Q_COMPLETED;
+		}
 		r = rados_aio_create_completion(fri, complete_callback,
 			NULL , &fri->completion);
 		if (r < 0) {

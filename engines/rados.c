@@ -320,9 +320,32 @@ static enum fio_q_status fio_rados_queue(struct thread_data *td,
 		}
 		rados->ops_scheduled++;
 		return FIO_Q_QUEUED;
+	} else if (io_u->ddir == DDIR_SYNC) {
+		rados_write_op_t write_op;
+		r = rados_aio_create_completion(fri, complete_callback,
+			NULL , &fri->completion);
+		if (r < 0) {
+			log_err("rados_aio_create_completion failed.\n");
+			goto failed;
+		}
+		write_op = rados_create_write_op();
+		if (write_op == NULL) {
+			log_err("rados_create_write_op failed.\n");
+			goto failed_comp;
+		}
+		rados_write_op_set_alloc_hint2(write_op, 0, 0, io_u->offset); 
+		r = rados_aio_write_op_operate(write_op, rados->io_ctx,
+			fri->completion, object, NULL, 0);
+		if (r < 0) {
+			log_err("rados_aio_write_op_operate failed.\n");
+			goto failed_write_op;
+		}
+		rados_release_write_op(write_op);
+		rados->ops_scheduled++;
+		return FIO_Q_QUEUED;
 	 }
 
-	log_err("WARNING: Only DDIR_READ, DDIR_WRITE and DDIR_TRIM are supported!");
+	log_err("WARNING: Only READ, WRITE, TRIM and SYNC(as set_alloc_hint) are supported!");
 
 failed_write_op:
 	rados_release_write_op(fri->write_op);
